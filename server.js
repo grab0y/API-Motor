@@ -3,11 +3,12 @@
 require('dotenv').config(); 
 const express = require('express');
 const mongoose = require('mongoose');
+const cors = require('cors'); 
 
-// CORRECCIÓN: Usando los nombres de archivo que proporcionaste
+// ... imports ...
 const eventoRoutes = require('./routeEventos');
+const estadoRoutes = require('./routeEstado'); 
 const { iniciarAnalisis } = require('./utilsAnalisis'); 
-// 💡 NUEVO: Importar el middleware de autenticación
 const { verificarToken } = require('./authMiddleware');
 
 const app = express();
@@ -18,24 +19,29 @@ const ID_DE_TU_BOMBA = "Bomba_Reservorio_01";
 // 1. CONFIGURACIÓN DE MIDDLEWARES GLOBALES (DEBE IR PRIMERO)
 // ===============================================
 
+// 🚨 CRÍTICO: Configuración de CORS
+app.use(cors()); 
+
 // Middleware CRÍTICO: Debe estar siempre al principio para parsear el JSON
 app.use(express.json());
 
-// 💡 Middleware de DEBUG (añadido para confirmar la llegada de la petición)
+// 💡 Middleware de DEBUG 
 app.use((req, res, next) => {
     console.log(`[DEBUG - Petición Recibida] Método: ${req.method}, URL: ${req.originalUrl}`);
     next();
 });
 
-// Ruta de prueba nuclear que usamos antes
-app.post('/', (req, res) => {
-    console.log("🟢 [PRUEBA] Conexión POST a la raíz (/). ¡Express está vivo!");
-    res.status(200).json({ status: 'Express vivo', test: 'ok' });
-});
+// 🚀 NUEVO: Servir archivos estáticos desde la carpeta 'public'
+// Cuando se accede a la raíz de la API (http://localhost:3000/), Express buscará index.html en 'public'.
+app.use(express.static('public'));
 
-// 2. Ruta principal para los eventos de la bomba
-// 🚨 APLICAMOS el middleware verificarToken AQUÍ para proteger TODAS las rutas en /api/bomba
+
+// 2. Rutas
+// Ruta principal para los eventos de la bomba (PROTEGIDA)
 app.use('/api/bomba', verificarToken, eventoRoutes); 
+
+// Rutas de lectura de estado (SIN protección de token)
+app.use('/api/lectura', estadoRoutes); 
 
 // ===============================================
 // 3. CONEXIÓN A LA BASE DE DATOS E INICIO DEL SERVIDOR

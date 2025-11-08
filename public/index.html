@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo de Bomba de Agua</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Fuente Inter para una mejor legibilidad */
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-blue-800 tracking-tight">Monitor de Bombeo</h1>
+            <p class="text-gray-600 mt-2">Estado en tiempo real y registro de eventos</p>
+        </header>
+
+        <!-- Tarjeta de Estado Actual -->
+        <div id="status-card" class="bg-white shadow-xl rounded-xl p-6 mb-8 transition-all duration-300">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Estado Actual</h2>
+            
+            <div id="status-display" class="flex items-center space-x-4">
+                <!-- Indicador de Estado (Círculo) -->
+                <div id="status-light" class="w-8 h-8 rounded-full shadow-lg"></div>
+                
+                <!-- Mensaje de Estado -->
+                <div>
+                    <p id="status-message" class="text-3xl font-bold text-gray-900">Cargando...</p>
+                    <p class="text-sm text-gray-500 mt-1">Último cambio registrado:</p>
+                    <p id="last-change" class="text-md font-medium text-gray-700">-</p>
+                </div>
+            </div>
+
+            <div class="mt-4 text-xs text-gray-400">
+                <p>Datos actualizados automáticamente cada 10 segundos.</p>
+            </div>
+        </div>
+
+        <!-- Tarjeta de Historial Reciente -->
+        <div class="bg-white shadow-xl rounded-xl p-6">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Historial Reciente (Últimos 10 Eventos)</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha / Hora</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Filas de historial se inyectarán aquí -->
+                        <tr><td colspan="2" class="px-6 py-4 text-sm text-gray-500 text-center">Cargando historial...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3000/api/lectura';
+        const statusLight = document.getElementById('status-light');
+        const statusMessage = document.getElementById('status-message');
+        const lastChange = document.getElementById('last-change');
+        const historyBody = document.getElementById('history-body');
+
+        // Función de utilidad para formatear la fecha
+        const formatTime = (isoString) => {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString('es-AR', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // 1. Función para obtener y actualizar el estado
+        const fetchStatus = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/estado`);
+                if (!response.ok) throw new Error('API status call failed');
+                const data = await response.json();
+
+                // Actualizar el Estado
+                statusMessage.textContent = data.mensaje;
+                lastChange.textContent = formatTime(data.ultimoCambio);
+
+                // Configurar el indicador visual
+                if (data.encendida) {
+                    statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-green-500 animate-pulse';
+                    statusMessage.className = 'text-3xl font-bold text-green-700';
+                } else {
+                    statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-red-500';
+                    statusMessage.className = 'text-3xl font-bold text-red-700';
+                }
+
+            } catch (error) {
+                console.error("Error al obtener el estado:", error);
+                statusMessage.textContent = 'ERROR DE CONEXIÓN';
+                statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-gray-500';
+                lastChange.textContent = 'Verifique el servidor Node.js';
+            }
+        };
+
+        // 2. Función para obtener y actualizar el historial
+        const fetchHistory = async () => {
+            try {
+                // Obtenemos los últimos 10 eventos
+                const response = await fetch(`${API_BASE_URL}/historial/10`); 
+                if (!response.ok) throw new Error('API history call failed');
+                const { historial } = await response.json();
+
+                historyBody.innerHTML = ''; // Limpiar historial anterior
+
+                if (historial.length === 0) {
+                    historyBody.innerHTML = '<tr><td colspan="2" class="px-6 py-4 text-sm text-gray-500 text-center">No hay eventos en la base de datos.</td></tr>';
+                    return;
+                }
+
+                historial.forEach(event => {
+                    const row = document.createElement('tr');
+                    const estadoClass = event.estado === 'START' 
+                                        ? 'text-green-600 font-bold' 
+                                        : 'text-red-600 font-bold';
+                    
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatTime(event.timestamp)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm ${estadoClass}">${event.estado}</td>
+                    `;
+                    historyBody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error("Error al obtener el historial:", error);
+                historyBody.innerHTML = '<tr><td colspan="2" class="px-6 py-4 text-sm text-red-500 text-center">Error al cargar el historial.</td></tr>';
+            }
+        };
+
+        // Inicializar y programar la actualización
+        const initDashboard = () => {
+            fetchStatus();
+            fetchHistory();
+            // Actualizar cada 10 segundos
+            setInterval(fetchStatus, 10000);
+            setInterval(fetchHistory, 10000);
+        };
+
+        window.onload = initDashboard;
+    </script>
+</body>
+</html>

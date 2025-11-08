@@ -116,7 +116,7 @@ const iniciarAnalisis = (bombaId = "Bomba_Reservorio_01") => {
     // '*/5 * * * *' -> cada 5 minutos
     // '0 * * * *' -> cada hora
 
-    cron.schedule('*/10 * * * *', async () => {
+    cron.schedule('*/1 * * * *', async () => {
         console.log(`\n--- Ejecutando análisis programado para ${bombaId} (${new Date().toLocaleTimeString()}) ---`);
         
         try {
