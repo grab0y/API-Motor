@@ -5,43 +5,54 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors'); 
 
-// ... imports ...
-const eventoRoutes = require('./routeEventos');
-const estadoRoutes = require('./routeEstado'); 
+// 1. Importaciones de Rutas y Middleware
+const eventoRoutes = require('./routeEventos'); // Rutas de eventos (POST del Arduino)
+const estadoRoutes = require('./routeEstado'); // Rutas de lectura (GET del Dashboard)
+const authRoutes = require('./routesAuth'); // NUEVO: Rutas de Login
 const { iniciarAnalisis } = require('./utilsAnalisis'); 
-const { verificarToken } = require('./authMiddleware');
+// Importamos AMBOS Middlewares: verificarToken (Arduino) y verificarJWT (Usuario)
+const { verificarToken, verificarJWT } = require('./authMiddleware'); 
 
 const app = express();
 const port = process.env.PORT || 3000;
 const ID_DE_TU_BOMBA = "Bomba_Reservorio_01"; 
 
 // ===============================================
-// 1. CONFIGURACIÓN DE MIDDLEWARES GLOBALES (DEBE IR PRIMERO)
+// 1. CONFIGURACIÓN DE MIDDLEWARES GLOBALES
 // ===============================================
 
-// 🚨 CRÍTICO: Configuración de CORS
 app.use(cors()); 
-
-// Middleware CRÍTICO: Debe estar siempre al principio para parsear el JSON
 app.use(express.json());
 
-// 💡 Middleware de DEBUG 
+// Middleware de DEBUG 
 app.use((req, res, next) => {
     console.log(`[DEBUG - Petición Recibida] Método: ${req.method}, URL: ${req.originalUrl}`);
     next();
 });
 
-// 🚀 NUEVO: Servir archivos estáticos desde la carpeta 'public'
-// Cuando se accede a la raíz de la API (http://localhost:3000/), Express buscará index.html en 'public'.
+// Servir archivos estáticos (Dashboard)
 app.use(express.static('public'));
 
 
-// 2. Rutas
-// Ruta principal para los eventos de la bomba (PROTEGIDA)
+// ===============================================
+// 2. DEFINICIÓN DE RUTAS PROTEGIDAS Y PÚBLICAS
+// ===============================================
+
+// Rutas de AUTENTICACIÓN (PÚBLICA: No necesita Token para generar uno)
+// Endpoint: /api/auth/login
+app.use('/api/auth', authRoutes);
+
+
+// Ruta de EVENTOS (PROTEGIDA POR TOKEN FIJO - ARDUINO)
+// Endpoint: /api/bomba/evento
 app.use('/api/bomba', verificarToken, eventoRoutes); 
 
-// Rutas de lectura de estado (SIN protección de token)
-app.use('/api/lectura', estadoRoutes); 
+
+// Rutas de LECTURA (PROTEGIDA POR JWT - USUARIO/FRONTEND)
+// Endpoint: /api/lectura/*
+// Todas las peticiones a /api/lectura deben llevar un JWT válido.
+app.use('/api/lectura', verificarJWT, estadoRoutes); 
+
 
 // ===============================================
 // 3. CONEXIÓN A LA BASE DE DATOS E INICIO DEL SERVIDOR
