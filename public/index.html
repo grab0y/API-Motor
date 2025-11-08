@@ -3,71 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoreo de Bomba de Agua</title>
+    <title>Monitor de Bomba de Agua</title>
+    <!-- Carga de Chart.js (CRÍTICO para los gráficos) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Carga de Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Fuente Inter para una mejor legibilidad */
+        /* Estilos generales */
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 md:p-8">
 
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-6xl mx-auto">
         <header class="text-center mb-10">
             <h1 class="text-4xl font-extrabold text-blue-800 tracking-tight">Monitor de Bombeo</h1>
-            <p class="text-gray-600 mt-2">Estado en tiempo real y registro de eventos</p>
+            <p class="text-gray-600 mt-2">Estado en tiempo real y métricas de uso</p>
         </header>
 
         <!-- Tarjeta de Estado Actual -->
-        <div id="status-card" class="bg-white shadow-xl rounded-xl p-6 mb-8 transition-all duration-300">
+        <div id="status-card" class="bg-white shadow-xl rounded-xl p-6 mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-700">Estado Actual</h2>
             
             <div id="status-display" class="flex items-center space-x-4">
-                <!-- Indicador de Estado (Círculo) -->
-                <div id="status-light" class="w-8 h-8 rounded-full shadow-lg"></div>
-                
-                <!-- Mensaje de Estado -->
+                <!-- Indicador de Estado -->
+                <div id="status-light" class="w-12 h-12 rounded-full shadow-lg"></div>
                 <div>
-                    <p id="status-message" class="text-3xl font-bold text-gray-900">Cargando...</p>
+                    <p id="status-message" class="text-4xl font-extrabold text-gray-900">Cargando...</p>
                     <p class="text-sm text-gray-500 mt-1">Último cambio registrado:</p>
                     <p id="last-change" class="text-md font-medium text-gray-700">-</p>
                 </div>
             </div>
-
             <div class="mt-4 text-xs text-gray-400">
                 <p>Datos actualizados automáticamente cada 10 segundos.</p>
             </div>
         </div>
 
-        <!-- Tarjeta de Historial Reciente -->
-        <div class="bg-white shadow-xl rounded-xl p-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Historial Reciente (Últimos 10 Eventos)</h2>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha / Hora</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evento</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body" class="bg-white divide-y divide-gray-200">
-                        <!-- Filas de historial se inyectarán aquí -->
-                        <tr><td colspan="2" class="px-6 py-4 text-sm text-gray-500 text-center">Cargando historial...</td></tr>
-                    </tbody>
-                </table>
+        <!-- Gráficos y Historial (3 Columnas en Pantallas Grandes) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            
+            <!-- Columna 1: Gráfico de Arranques -->
+            <div class="bg-white shadow-xl rounded-xl p-6">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Veces que Arrancó</h3>
+                <div class="h-64">
+                    <canvas id="dailyCountChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Columna 2: Gráfico de Minutos Encendida -->
+            <div class="bg-white shadow-xl rounded-xl p-6">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Minutos Encendida</h3>
+                <div class="h-64">
+                    <canvas id="dailyTimeChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Columna 3: Historial -->
+            <div class="bg-white shadow-xl rounded-xl p-6 lg:col-span-1">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Historial Reciente</h3>
+                <div class="overflow-x-auto h-64 overflow-y-scroll">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha / Hora</th>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Filas de historial se inyectarán aquí -->
+                            <tr><td colspan="2" class="px-6 py-4 text-sm text-gray-500 text-center">Cargando historial...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        const API_BASE_URL = 'https://api-motor-production-0cb2.up.railway.app/api/lectura';
+        // CONFIGURACIÓN
+        const API_BASE_URL = 'https://api-motor-production-0cb2.up.railway.app/api/lectura'; 
+
+        // ELEMENTOS DOM
         const statusLight = document.getElementById('status-light');
         const statusMessage = document.getElementById('status-message');
         const lastChange = document.getElementById('last-change');
-        const historyBody = document.getElementById('history-body');
+        
+        const ctxCount = document.getElementById('dailyCountChart').getContext('2d');
+        const ctxTime = document.getElementById('dailyTimeChart').getContext('2d');
+        let dailyCountChart;
+        let dailyTimeChart;
 
-        // Función de utilidad para formatear la fecha
+        // ======================================
+        // UTILIDADES Y LÓGICA GENERAL
+        // ======================================
+
         const formatTime = (isoString) => {
             if (!isoString) return '-';
             const date = new Date(isoString);
@@ -81,43 +110,83 @@
             });
         }
 
-        // 1. Función para obtener y actualizar el estado
+        const createOrUpdateChart = (ctx, chartInstance, type, labels, data, label, color) => {
+            if (chartInstance) {
+                chartInstance.data.labels = labels;
+                chartInstance.data.datasets[0].data = data;
+                chartInstance.update();
+                return chartInstance;
+            }
+
+            return new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        backgroundColor: color.replace('0.7', '0.7'),
+                        borderColor: color.replace('0.7', '1'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: label
+                            },
+                            ticks: {
+                                callback: function(value) { if (value % 1 === 0) { return value; } }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        };
+
+        // ======================================
+        // FETCHERS
+        // ======================================
+
         const fetchStatus = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/estado`);
                 if (!response.ok) throw new Error('API status call failed');
                 const data = await response.json();
 
-                // Actualizar el Estado
                 statusMessage.textContent = data.mensaje;
                 lastChange.textContent = formatTime(data.ultimoCambio);
 
-                // Configurar el indicador visual
-                if (data.encendida) {
-                    statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-green-500 animate-pulse';
-                    statusMessage.className = 'text-3xl font-bold text-green-700';
-                } else {
-                    statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-red-500';
-                    statusMessage.className = 'text-3xl font-bold text-red-700';
-                }
+                const isRunning = data.encendida;
+                statusLight.className = isRunning 
+                    ? 'w-12 h-12 rounded-full shadow-lg bg-green-500 animate-pulse' 
+                    : 'w-12 h-12 rounded-full shadow-lg bg-red-500';
+                statusMessage.className = `text-4xl font-extrabold ${isRunning ? 'text-green-700' : 'text-red-700'}`;
 
             } catch (error) {
                 console.error("Error al obtener el estado:", error);
                 statusMessage.textContent = 'ERROR DE CONEXIÓN';
-                statusLight.className = 'w-8 h-8 rounded-full shadow-lg bg-gray-500';
-                lastChange.textContent = 'Verifique el servidor Node.js';
+                statusLight.className = 'w-12 h-12 rounded-full shadow-lg bg-gray-500';
+                lastChange.textContent = 'Verifique el servidor API.';
             }
         };
 
-        // 2. Función para obtener y actualizar el historial
         const fetchHistory = async () => {
             try {
-                // Obtenemos los últimos 10 eventos
                 const response = await fetch(`${API_BASE_URL}/historial/10`); 
                 if (!response.ok) throw new Error('API history call failed');
                 const { historial } = await response.json();
 
-                historyBody.innerHTML = ''; // Limpiar historial anterior
+                const historyBody = document.getElementById('history-body');
+                historyBody.innerHTML = '';
 
                 if (historial.length === 0) {
                     historyBody.innerHTML = '<tr><td colspan="2" class="px-6 py-4 text-sm text-gray-500 text-center">No hay eventos en la base de datos.</td></tr>';
@@ -126,30 +195,86 @@
 
                 historial.forEach(event => {
                     const row = document.createElement('tr');
-                    const estadoClass = event.estado === 'START' 
-                                        ? 'text-green-600 font-bold' 
-                                        : 'text-red-600 font-bold';
+                    const estadoClass = event.estado === 'START' ? 'text-green-600 font-bold' : 'text-red-600 font-bold';
                     
                     row.innerHTML = `
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatTime(event.timestamp)}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm ${estadoClass}">${event.estado}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatTime(event.timestamp)}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm ${estadoClass}">${event.estado}</td>
                     `;
                     historyBody.appendChild(row);
                 });
 
             } catch (error) {
                 console.error("Error al obtener el historial:", error);
+                const historyBody = document.getElementById('history-body');
                 historyBody.innerHTML = '<tr><td colspan="2" class="px-6 py-4 text-sm text-red-500 text-center">Error al cargar el historial.</td></tr>';
             }
         };
 
-        // Inicializar y programar la actualización
+        // 3. Gráfico de Arranques
+        const fetchCountData = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/conteo-diario`);
+                if (!response.ok) throw new Error('API count data call failed');
+                const { datos } = await response.json();
+
+                const labels = datos.map(d => d.fecha);
+                const counts = datos.map(d => d.conteo);
+
+                dailyCountChart = createOrUpdateChart(
+                    ctxCount, 
+                    dailyCountChart, 
+                    'bar', 
+                    labels, 
+                    counts, 
+                    'Arranques por Día', 
+                    'rgba(59, 130, 246, 0.7)' // Azul
+                );
+
+            } catch (error) {
+                console.error("Error al obtener datos de conteo:", error);
+            }
+        };
+        
+        // 4. Gráfico de Minutos Encendida
+        const fetchTimeData = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/tiempo-encendido-diario`);
+                if (!response.ok) throw new Error('API time data call failed');
+                const { datos } = await response.json();
+
+                const labels = datos.map(d => d.fecha);
+                const minutes = datos.map(d => d.minutos);
+
+                dailyTimeChart = createOrUpdateChart(
+                    ctxTime, 
+                    dailyTimeChart, 
+                    'bar', 
+                    labels, 
+                    minutes, 
+                    'Minutos Encendida', 
+                    'rgba(16, 185, 129, 0.7)' // Verde esmeralda
+                );
+
+            } catch (error) {
+                console.error("Error al obtener datos de tiempo:", error);
+            }
+        };
+
+        // ======================================
+        // INICIALIZACIÓN
+        // ======================================
         const initDashboard = () => {
             fetchStatus();
             fetchHistory();
-            // Actualizar cada 10 segundos
+            fetchCountData();
+            fetchTimeData();
+            
+            // Frecuencia de actualización
             setInterval(fetchStatus, 10000);
             setInterval(fetchHistory, 10000);
+            setInterval(fetchCountData, 60000); // 1 minuto para gráficos
+            setInterval(fetchTimeData, 60000);  // 1 minuto para gráficos
         };
 
         window.onload = initDashboard;
