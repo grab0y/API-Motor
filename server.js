@@ -4,13 +4,13 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors'); 
+const rateLimit = require('express-rate-limit'); // 🚨 NUEVO: Importamos el rate limiter
 
 // 1. Importaciones de Rutas y Middleware
-const eventoRoutes = require('./routeEventos'); // Rutas de eventos (POST del Arduino)
-const estadoRoutes = require('./routeEstado'); // Rutas de lectura (GET del Dashboard)
-const authRoutes = require('./routesAuth'); // NUEVO: Rutas de Login
+const eventoRoutes = require('./routeEventos'); 
+const estadoRoutes = require('./routeEstado'); 
+const authRoutes = require('./routesAuth'); 
 const { iniciarAnalisis } = require('./utilsAnalisis'); 
-// Importamos AMBOS Middlewares: verificarToken (Arduino) y verificarJWT (Usuario)
 const { verificarToken, verificarJWT } = require('./authMiddleware'); 
 
 const app = express();
@@ -21,13 +21,26 @@ const ID_DE_TU_BOMBA = "Bomba_Reservorio_01";
 // 1. CONFIGURACIÓN DE MIDDLEWARES GLOBALES
 // ===============================================
 
+// Middleware CRÍTICO de CORS y JSON
 app.use(cors()); 
 app.use(express.json());
 
-// Middleware de DEBUG 
+// 💡 Middleware de DEBUG 
 app.use((req, res, next) => {
     console.log(`[DEBUG - Petición Recibida] Método: ${req.method}, URL: ${req.originalUrl}`);
     next();
+});
+
+// 🚨 CONFIGURACIÓN DEL RATE LIMITER 🚨
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos (tiempo de ventana)
+    max: 10, // Límite de 10 peticiones por IP en 15 minutos (ajustable)
+    standardHeaders: true, 
+    legacyHeaders: false,
+    message: {
+        success: false, 
+        message: "Demasiados intentos de login. Intente de nuevo en 15 minutos."
+    }
 });
 
 // Servir archivos estáticos (Dashboard)
@@ -38,19 +51,15 @@ app.use(express.static('public'));
 // 2. DEFINICIÓN DE RUTAS PROTEGIDAS Y PÚBLICAS
 // ===============================================
 
-// Rutas de AUTENTICACIÓN (PÚBLICA: No necesita Token para generar uno)
-// Endpoint: /api/auth/login
-app.use('/api/auth', authRoutes);
+// 🚨 APLICAMOS EL RATE LIMITER SOLO A LA RUTA DE AUTENTICACIÓN
+app.use('/api/auth', loginLimiter, authRoutes);
 
 
 // Ruta de EVENTOS (PROTEGIDA POR TOKEN FIJO - ARDUINO)
-// Endpoint: /api/bomba/evento
 app.use('/api/bomba', verificarToken, eventoRoutes); 
 
 
 // Rutas de LECTURA (PROTEGIDA POR JWT - USUARIO/FRONTEND)
-// Endpoint: /api/lectura/*
-// Todas las peticiones a /api/lectura deben llevar un JWT válido.
 app.use('/api/lectura', verificarJWT, estadoRoutes); 
 
 
