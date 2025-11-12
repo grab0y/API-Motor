@@ -136,7 +136,7 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
 
 const iniciarAnalisis = (bombaId = "Bomba_Reservorio_01") => {
     // El cron job se ejecutará cada 5 minutos
-    cron.schedule('*/20 * * * *', async () => {
+    cron.schedule('*/4 * * * *', async () => {
         console.log(`\n--- Ejecutando análisis programado para ${bombaId} (${new Date().toLocaleTimeString('es-AR')}) ---`);
         
         try {
