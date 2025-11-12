@@ -7,6 +7,7 @@ const Evento = require('./modelEventos');
  * Función para registrar un evento START o STOP enviado por el Arduino.
  */
 exports.registrarEvento = async (req, res) => {
+  console.log('[RECIBIDO] Nuevo evento recibido desde Arduino:', req.body);
   
   const { id_bomba, estado, timestamp } = req.body;
 
