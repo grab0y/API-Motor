@@ -9,26 +9,34 @@ const JWT_SECRETO = process.env.JWT_SECRET;
 
 exports.login = (req, res) => {
     const { username, password } = req.body;
-    console.log(`[JWT] Intento de login para usuario: ${username} ${password}`);
+    
+    // --- NUEVA LÍNEA CLAVE: Convertir el nombre de usuario a minúsculas ---
+    const lowerCaseUsername = username ? username.toLowerCase() : username;
+    // ---------------------------------------------------------------------
+
+    console.log(`[JWT] Intento de login para usuario: ${username} (validando como: ${lowerCaseUsername})`);
 
     // 1. Validar la existencia de credenciales
+    // Se usa 'username' (el original) para la validación inicial de existencia
     if (!username || !password) {
         return res.status(400).json({ message: 'Se requiere nombre de usuario y contraseña.' });
     }
 
     // 2. Validar las credenciales fijas
-    console.log(`Comparando con credenciales válidas: ${USUARIO_VALIDO} ${PASSWORD_VALIDA}`);
-    if (username === USUARIO_VALIDO && password === PASSWORD_VALIDA) {
+    //console.log(`Comparando con credenciales válidas: ${USUARIO_VALIDO} ${PASSWORD_VALIDA}`);
+    // Se usa 'lowerCaseUsername' para la comparación
+    if (lowerCaseUsername === USUARIO_VALIDO && password === PASSWORD_VALIDA) {
         // 3. Credenciales correctas: Emitir el token JWT
         const payload = { 
             userId: 1, // ID simple para el usuario único
+            // Es buena práctica usar el nombre de usuario normalizado (minúsculas)
             username: USUARIO_VALIDO 
         };
         
         // El token expira en 8 horas (8h). Puedes ajustar esto.
         const token = jwt.sign(payload, JWT_SECRETO, { expiresIn: '8h' }); 
         
-        console.log(`✅ [JWT] Login exitoso para ${username}.`);
+        console.log(`✅ [JWT] Login exitoso para ${lowerCaseUsername}.`);
         
         // Devolver el token al cliente
         return res.status(200).json({ 
