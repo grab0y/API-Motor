@@ -15,7 +15,7 @@ const { verificarToken, verificarJWT } = require('./authMiddleware');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const ID_DE_TU_BOMBA = "Bomba_Reservorio_01"; 
+const ID_DE_TU_BOMBA = "1"; 
 
 // ===============================================
 // 1. CONFIGURACIÓN DE MIDDLEWARES GLOBALES

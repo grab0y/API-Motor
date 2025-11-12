@@ -1,7 +1,7 @@
 // controllers/estadoController.js
 
 const Evento = require('./modelEventos'); 
-const ID_DE_TU_BOMBA = "Bomba_Reservorio_01"; // Usamos el mismo ID que en server.js
+const ID_DE_TU_BOMBA = "1"; // Usamos el mismo ID que en server.js
 
 // Función auxiliar para obtener el inicio del día hace N días (en hora local de la BD/servidor)
 const getStartOfDayXDaysAgo = (days) => {
