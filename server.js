@@ -26,10 +26,10 @@ app.use(cors());
 app.use(express.json());
 
 // 💡 Middleware de DEBUG 
-app.use((req, res, next) => {
+/* app.use((req, res, next) => {
     console.log(`[DEBUG - Petición Recibida] Método: ${req.method}, URL: ${req.originalUrl}`);
     next();
-});
+}); */
 
 // 🚨 CONFIGURACIÓN DEL RATE LIMITER 🚨
 const loginLimiter = rateLimit({

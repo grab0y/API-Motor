@@ -50,7 +50,7 @@ const verificarJWT = (req, res, next) => {
         
         req.user = decoded; 
         
-        console.log('✅ [JWT] Token verificado. Acceso concedido.');
+        //console.log('✅ [JWT] Token verificado. Acceso concedido.');
         next();
     } catch (err) {
         console.error('🚨 [JWT] Verificación fallida:', err.message);

@@ -36,7 +36,7 @@ exports.login = (req, res) => {
         // El token expira en 8 horas (8h). Puedes ajustar esto.
         const token = jwt.sign(payload, JWT_SECRETO, { expiresIn: '8h' }); 
         
-        console.log(`✅ [JWT] Login exitoso para ${lowerCaseUsername}.`);
+        //console.log(`✅ [JWT] Login exitoso para ${lowerCaseUsername}.`);
         
         // Devolver el token al cliente
         return res.status(200).json({ 
