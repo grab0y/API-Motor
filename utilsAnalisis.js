@@ -1,156 +1,248 @@
 // services/analisisService.js
 
 const cron = require('node-cron');
-const Evento = require('./modelEventos'); // Asegúrate de que esta ruta sea correcta
-const nodemailer = require('nodemailer'); // Para simular el envío de alertas
+const https = require('https');
+const Evento = require('./modelEventos');
+const Alerta = require('./modelAlertas');
+const nodemailer = require('nodemailer'); // Placeholder para integraciones de email
 
 // ==============================
-// CONFIGURACIÓN DE ALERTAS Y SILENCIAMIENTO
+// CONFIGURACION DE ALERTAS Y SILENCIAMIENTO
 // ==============================
-const ALERTA_REPETICION_VECES = 3;   // Máximo de veces que puede arrancar
-const ALERTA_REPETICION_PERIODO_MIN = 120; // Período de 2 horas
-const ALERTA_FUNCIONAMIENTO_MAX_MIN = 30; // Máximo de 30 minutos encendido
+const ALERTA_REPETICION_VECES = 3;
+const ALERTA_REPETICION_PERIODO_MIN = 120;
+const ALERTA_FUNCIONAMIENTO_MAX_MIN = 15;
 
-// 🚨 VARIABLES GLOBALES EN MEMORIA para el silenciamiento
-// Estas variables persisten mientras el servidor Node.js esté activo.
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_HABILITADO = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
+
+const TIPOS_ALERTA = Object.freeze({
+    REPETICION: 'REPETICION',
+    PROLONGADO: 'PROLONGADO'
+});
+
 let alertaActivaRepeticion = false;
 let alertaActivaProlongado = false;
 
 // ==============================
-// SIMULACIÓN DE ENVÍO DE ALERTA
+// UTILIDADES DE NOTIFICACION Y LOG
 // ==============================
-const enviarAlerta = async (asunto, cuerpo) => {
-    // Aquí iría el código real de envío de email o notificación.
+const enviarAlertaConsola = (asunto, cuerpo) => {
     console.log('-------------------------------------------');
-    console.log(`🚨 ¡ALERTA DISPARADA!`);
+    console.log('*** ALERTA DISPARADA ***');
     console.log(`ASUNTO: ${asunto}`);
     console.log(`CUERPO: ${cuerpo}`);
     console.log('-------------------------------------------');
 };
 
+const enviarTelegram = async (mensaje) => {
+    if (!TELEGRAM_HABILITADO) {
+        console.warn('[Alertas] Telegram no configurado (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).');
+        return;
+    }
+
+    await new Promise((resolve) => {
+        const payload = JSON.stringify({
+            chat_id: TELEGRAM_CHAT_ID,
+            text: mensaje
+        });
+
+        const request = https.request({
+            hostname: 'api.telegram.org',
+            path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            },
+            timeout: 5000
+        }, (res) => {
+            res.on('data', () => {});
+            res.on('end', resolve);
+        });
+
+        request.on('error', (error) => {
+            console.error('[Alertas] Error al enviar mensaje de Telegram:', error.message);
+            resolve();
+        });
+
+        request.on('timeout', () => {
+            request.destroy();
+            console.error('[Alertas] Timeout al enviar mensaje de Telegram.');
+            resolve();
+        });
+
+        request.write(payload);
+        request.end();
+    });
+};
+
+const enviarAlerta = async (asunto, cuerpo) => {
+    enviarAlertaConsola(asunto, cuerpo);
+    await enviarTelegram(`${asunto}\n${cuerpo}`);
+};
+
+const registrarFalla = async ({ bombaId, tipo, descripcion, detalle }) => {
+    try {
+        const alerta = new Alerta({
+            bombaId,
+            tipo,
+            descripcion,
+            detalle
+        });
+        await alerta.save();
+    } catch (error) {
+        console.error('[Alertas] Error al guardar la falla en MongoDB:', error.message);
+    }
+};
+
+const cerrarAlertasActivas = async ({ bombaId, tipo, mensajeResolucion }) => {
+    try {
+        await Alerta.updateMany(
+            { bombaId, tipo, activo: true },
+            { $set: { activo: false, mensajeResolucion, resueltaEn: new Date() } }
+        );
+    } catch (error) {
+        console.error('[Alertas] Error al actualizar el estado de las alertas:', error.message);
+    }
+};
+
+const procesarDisparoDeFalla = async ({ bombaId, tipo, asunto, cuerpo, detalle }) => {
+    await registrarFalla({ bombaId, tipo, descripcion: cuerpo, detalle });
+    await enviarAlerta(asunto, cuerpo);
+};
+
 // ==============================
-// FUNCIONES DE ANÁLISIS
+// FUNCIONES DE ANALISIS
 // ==============================
 
-// 1. ANÁLISIS DE ARRANQUES REPETITIVOS (Pérdida/Fuga)
+// 1. Analisis de arranques repetitivos (posible fuga)
 const analizarArranquesRepetitivos = async (bombaId) => {
     const limiteTiempo = new Date(Date.now() - ALERTA_REPETICION_PERIODO_MIN * 60000);
 
-    // 1. Buscar todos los eventos 'START' en el periodo
     const arranques = await Evento.find({
         id_bomba: bombaId,
         estado: 'START',
         timestamp: { $gte: limiteTiempo }
     }).sort({ timestamp: -1 });
 
-    // 2. Aplicar la regla de alerta
     if (arranques.length >= ALERTA_REPETICION_VECES) {
-        // --- 🚨 Falla detectada ---
         if (!alertaActivaRepeticion) {
-            // Solo alertar si la falla no estaba previamente activa
-            const asunto = `🚨 ALERTA INICIO: ${bombaId} - ${arranques.length} arranques en ${ALERTA_REPETICION_PERIODO_MIN} minutos.`;
-            const cuerpo = `La bomba ${bombaId} ha arrancado ${arranques.length} veces. Fuga o flotante defectuoso.`;
-            await enviarAlerta(asunto, cuerpo);
-            alertaActivaRepeticion = true; // Activar el modo silencio
-            console.log(`[Análisis Repetición] FALLA DETECTADA. Alerta enviada.`);
+            const asunto = `ALERTA: - ${arranques.length} arranques en ${ALERTA_REPETICION_PERIODO_MIN} min`;
+            const cuerpo = `La bomba ${bombaId} arranco ${arranques.length} veces en ${ALERTA_REPETICION_PERIODO_MIN} minutos. Posible fuga o flotante defectuoso.`;
+            await procesarDisparoDeFalla({
+                bombaId,
+                tipo: TIPOS_ALERTA.REPETICION,
+                asunto,
+                cuerpo,
+                detalle: {
+                    cantidadArranques: arranques.length,
+                    periodoMinutos: ALERTA_REPETICION_PERIODO_MIN
+                }
+            });
+            alertaActivaRepeticion = true;
+            console.log('[Analisis Repeticion] FALLA DETECTADA.');
         } else {
-            // Ya alertamos, solo registramos en consola (silencio)
-            console.log(`[Análisis Repetición] FALLA ACTIVA. Silenciamiento.`);
+            console.log('[Analisis Repeticion] FALLA ACTIVA. Silenciamiento.');
         }
     } else {
-        // --- ✅ Falla resuelta ---
         if (alertaActivaRepeticion) {
-            // Si la falla estaba activa pero ya no se cumple, notificar resolución (opcional)
-            console.log(`[Análisis Repetición] RESOLUCIÓN. La bomba ha vuelto a ciclos normales.`);
-            alertaActivaRepeticion = false; // Desactivar el modo silencio
+            console.log('[Analisis Repeticion] RESOLUCION. Ciclos normales.');
+            await cerrarAlertasActivas({
+                bombaId,
+                tipo: TIPOS_ALERTA.REPETICION,
+                mensajeResolucion: 'La bomba volvio a operar dentro de los arranques esperados.'
+            });
+            alertaActivaRepeticion = false;
         } else {
-            console.log(`[Análisis Repetición] OK. Ciclos normales.`);
+            console.log('[Analisis Repeticion] OK. Ciclos normales.');
         }
     }
 };
 
-
-// 2. ANÁLISIS DE FUNCIONAMIENTO PROLONGADO (Obstrucción/Fallo de Flotante)
+// 2. Analisis de funcionamiento prolongado (posible obstruccion)
 const analizarFuncionamientoProlongado = async (bombaId) => {
-    // 1. Buscar el último evento START
-    const ultimoStart = await Evento.findOne({ 
-        id_bomba: bombaId, 
-        estado: 'START' 
+    const ultimoStart = await Evento.findOne({
+        id_bomba: bombaId,
+        estado: 'START'
     }).sort({ timestamp: -1 });
 
     if (!ultimoStart) {
-        // No hay eventos de START, no hay falla
         if (alertaActivaProlongado) {
-            // Si estaba activa, y no hay START, se asume que se resolvió
-            console.log(`[Análisis Prolongado] RESOLUCIÓN. Bomba sin START reciente.`);
+            console.log('[Analisis Prolongado] RESOLUCION. Sin eventos START recientes.');
             alertaActivaProlongado = false;
         }
-        return; 
+        return;
     }
 
-    // 2. Buscar si hay un evento STOP posterior a ese START
     const stopPosterior = await Evento.findOne({
         id_bomba: bombaId,
         estado: 'STOP',
         timestamp: { $gt: ultimoStart.timestamp }
     }).sort({ timestamp: -1 });
 
-    // Si no encontramos un STOP, la bomba sigue encendida.
     if (!stopPosterior) {
         const tiempoEncendidoMS = Date.now() - ultimoStart.timestamp.getTime();
         const tiempoEncendidoMin = Math.floor(tiempoEncendidoMS / 60000);
 
-        // 3. Aplicar la regla de alerta
         if (tiempoEncendidoMin >= ALERTA_FUNCIONAMIENTO_MAX_MIN) {
-            // --- 🚨 Falla detectada ---
             if (!alertaActivaProlongado) {
-                // Solo alertar si la falla no estaba previamente activa
-                const asunto = `🚨 ALERTA INICIO: ${bombaId} - Encendida por ${tiempoEncendidoMin} minutos.`;
-                const cuerpo = `La bomba ${bombaId} excede el límite de ${ALERTA_FUNCIONAMIENTO_MAX_MIN} minutos. Posible obstrucción o fallo de flotante.`;
-                await enviarAlerta(asunto, cuerpo);
-                alertaActivaProlongado = true; // Activar el modo silencio
-                console.log(`[Análisis Prolongado] FALLA DETECTADA. Alerta enviada.`);
+                const asunto = `ALERTA: Bomba encendida ${tiempoEncendidoMin} min`;
+                const cuerpo = `La bomba ${bombaId} supero el limite de ${ALERTA_FUNCIONAMIENTO_MAX_MIN} minutos encendida. Posible obstruccion o fallo de flotante.`;
+                await procesarDisparoDeFalla({
+                    bombaId,
+                    tipo: TIPOS_ALERTA.PROLONGADO,
+                    asunto,
+                    cuerpo,
+                    detalle: {
+                        minutosEncendida: tiempoEncendidoMin,
+                        umbralMinutos: ALERTA_FUNCIONAMIENTO_MAX_MIN,
+                        inicio: ultimoStart.timestamp
+                    }
+                });
+                alertaActivaProlongado = true;
+                console.log('[Analisis Prolongado] FALLA DETECTADA.');
             } else {
-                // Ya alertamos, en silencio
-                console.log(`[Análisis Prolongado] FALLA ACTIVA (${tiempoEncendidoMin} min). Silenciamiento.`);
+                console.log(`[Analisis Prolongado] FALLA ACTIVA (${tiempoEncendidoMin} min). Silenciamiento.`);
             }
         } else {
-            // El tiempo encendido es alto, pero aún bajo el umbral de alerta
-            console.log(`[Análisis Prolongado] OK. Encendida por ${tiempoEncendidoMin} minutos.`);
+            console.log(`[Analisis Prolongado] OK. Encendida por ${tiempoEncendidoMin} minutos.`);
         }
     } else {
-        // --- ✅ Falla resuelta ---
         if (alertaActivaProlongado) {
-            // Si la bomba estaba en alerta y se acaba de apagar (hay un STOP posterior), notificar resolución
-            console.log(`[Análisis Prolongado] RESOLUCIÓN. La bomba se ha apagado después de la alerta.`);
-            alertaActivaProlongado = false; // Desactivar el modo silencio
+            console.log('[Analisis Prolongado] RESOLUCION. La bomba se apago tras la alerta.');
+            await cerrarAlertasActivas({
+                bombaId,
+                tipo: TIPOS_ALERTA.PROLONGADO,
+                mensajeResolucion: 'La bomba se apago luego del periodo prolongado.'
+            });
+            alertaActivaProlongado = false;
         }
-        console.log('[Análisis Prolongado] OK. La bomba está apagada o tuvo un ciclo normal.');
+        console.log('[Analisis Prolongado] OK. Ciclo normal completado.');
     }
 };
-
 
 // ==============================
 // CRON JOB PRINCIPAL
 // ==============================
 
-const iniciarAnalisis = (bombaId = "Bomba_Reservorio_01") => {
-    // El cron job se ejecutará cada 5 minutos
-    cron.schedule('*/4 * * * *', async () => {
-        console.log(`\n--- Ejecutando análisis programado para ${bombaId} (${new Date().toLocaleTimeString('es-AR')}) ---`);
-        
+const iniciarAnalisis = (bombaId = 'Bomba_Reservorio_01') => {
+    cron.schedule('*/1 * * * *', async () => {
+        console.log(`\n--- Analisis programado para ${bombaId} (${new Date().toLocaleTimeString('es-AR')}) ---`);
+
         try {
             await analizarArranquesRepetitivos(bombaId);
             await analizarFuncionamientoProlongado(bombaId);
         } catch (error) {
-            console.error('Error fatal durante el análisis de la bomba:', error);
+            console.error('Error durante el analisis de la bomba:', error);
         }
     }, {
         scheduled: true,
-        timezone: "America/Argentina/Buenos_Aires"
+        timezone: 'America/Argentina/Buenos_Aires'
     });
-    
-    console.log('Programación de análisis de bomba iniciada (cada 5 minutos).');
+
+    console.log('Programacion de analisis de bomba iniciada (cada 4 minutos).');
 };
 
 module.exports = { iniciarAnalisis };
