@@ -23,12 +23,37 @@ const formatLocalDateKey = (date) => localKeyFormatter.format(date);
 const formatLocalDateLabel = (date) => localLabelFormatter.format(date);
 const formatLabelFromKey = (key) => formatLocalDateLabel(new Date(`${key}T00:00:00${LOCAL_TZ_ISO_OFFSET}`));
 
-// Función auxiliar para obtener el inicio del día hace N días (en hora local de la BD/servidor)
+const getLocalDayStart = (date) => new Date(`${formatLocalDateKey(date)}T00:00:00${LOCAL_TZ_ISO_OFFSET}`);
+const getLocalDayEnd = (date) => new Date(getLocalDayStart(date).getTime() + 24 * 60 * 60 * 1000);
+
+// Función auxiliar para obtener el inicio del día hace N días (en hora local).
 const getStartOfDayXDaysAgo = (days) => {
     const d = new Date();
-    d.setHours(0, 0, 0, 0); // Establecer al inicio del día de hoy
     d.setDate(d.getDate() - days); // Retroceder N días
-    return d;
+    return getLocalDayStart(d);
+};
+
+const sumarDuracionPorDia = (inicio, fin, acumulador) => {
+    if (!inicio || !fin || inicio >= fin) return;
+
+    let cursor = new Date(inicio);
+    const limite = new Date(fin);
+
+    while (cursor < limite) {
+        const key = formatLocalDateKey(cursor);
+        const finDia = getLocalDayEnd(cursor);
+        const segmentoFin = finDia < limite ? finDia : limite;
+        const diffMs = segmentoFin.getTime() - cursor.getTime();
+
+        if (!acumulador.has(key)) {
+            acumulador.set(key, { ms: 0, label: formatLabelFromKey(key) });
+        }
+
+        const acumulado = acumulador.get(key);
+        acumulado.ms += diffMs;
+
+        cursor = new Date(segmentoFin);
+    }
 };
 
 // Lógica para obtener el último evento y determinar el estado.
@@ -166,76 +191,39 @@ exports.obtenerTiempoEncendidoDiario = async (req, res) => {
             timestamp: { $gte: haceSieteDias }
         }).sort({ timestamp: 1 }); // Ordenamos cronológicamente
 
-        // Objeto para almacenar la duración total por día (DateString -> minutos)
+        // Objeto para almacenar la duración total por día (clave local -> acumulado en ms)
         const duracionDiaria = new Map();
+        const hoy = new Date();
         for (let i = 0; i < 7; i++) {
-            const d = getStartOfDayXDaysAgo(6 - i); // Empezamos desde hace 6 días hasta hoy
-            duracionDiaria.set(d.toDateString(), 0);
+            const baseDate = new Date(hoy);
+            baseDate.setDate(baseDate.getDate() - (6 - i)); // Empezamos desde hace 6 días hasta hoy
+            const key = formatLocalDateKey(baseDate);
+            duracionDiaria.set(key, { ms: 0, label: formatLocalDateLabel(baseDate) });
         }
 
         let startTimestamp = null;
-        let lastDayKey = null;
 
         // 2. Iterar sobre los eventos para emparejar START y STOP
         for (let i = 0; i < eventos.length; i++) {
             const evento = eventos[i];
-            const eventoTimestamp = evento.timestamp.getTime(); // Tiempo en ms
-            const currentDayKey = new Date(evento.timestamp).toDateString();
 
             if (evento.estado === 'START') {
-                startTimestamp = eventoTimestamp;
-                lastDayKey = currentDayKey; // Guardamos el día de inicio
+                startTimestamp = new Date(evento.timestamp);
             } else if (evento.estado === 'STOP' && startTimestamp !== null) {
-                
-                const stopTimestamp = eventoTimestamp;
-                let duracionMS = stopTimestamp - startTimestamp;
-                
-                // 3. Manejar ciclos que cruzan la medianoche
-                if (currentDayKey !== lastDayKey) {
-                    // El ciclo empezó ayer y terminó hoy. Dividir la duración.
-                    // a) Duración de ayer (desde START hasta medianoche de ayer)
-                    const medianoche = getStartOfDayXDaysAgo(0); // Medianoche de hoy
-                    
-                    if (startTimestamp < medianoche.getTime()) {
-                        const duracionAyerMS = medianoche.getTime() - startTimestamp;
-                        const minutosAyer = Math.round(duracionAyerMS / 60000);
-                        duracionDiaria.set(lastDayKey, (duracionDiaria.get(lastDayKey) || 0) + minutosAyer);
-                        
-                        // b) Duración de hoy (desde medianoche hasta STOP)
-                        const duracionHoyMS = stopTimestamp - medianoche.getTime();
-                        const minutosHoy = Math.round(duracionHoyMS / 60000);
-                        duracionDiaria.set(currentDayKey, (duracionDiaria.get(currentDayKey) || 0) + minutosHoy);
-                    } else {
-                         // Si el ciclo es normal y no cruza, o cruzó pero el START fue el mismo día (teóricamente no debería pasar aquí)
-                         const minutos = Math.round(duracionMS / 60000);
-                         duracionDiaria.set(currentDayKey, (duracionDiaria.get(currentDayKey) || 0) + minutos);
-                    }
-
-                } else {
-                    // Ciclo normal dentro del mismo día
-                    const minutos = Math.round(duracionMS / 60000);
-                    duracionDiaria.set(currentDayKey, (duracionDiaria.get(currentDayKey) || 0) + minutos);
-                }
-
+                sumarDuracionPorDia(startTimestamp, new Date(evento.timestamp), duracionDiaria);
                 startTimestamp = null; // Reiniciar para el próximo ciclo
-                lastDayKey = null;
             }
         }
 
         // 4. Manejar el estado actual (si la bomba está encendida ahora)
         if (startTimestamp !== null) {
-            const duracionActualMS = Date.now() - startTimestamp;
-            const minutosActual = Math.round(duracionActualMS / 60000);
-            
-            // Asignamos la duración no cerrada al día actual
-            const hoyKey = getStartOfDayXDaysAgo(0).toDateString();
-            duracionDiaria.set(hoyKey, (duracionDiaria.get(hoyKey) || 0) + minutosActual);
+            sumarDuracionPorDia(startTimestamp, new Date(), duracionDiaria);
         }
 
         // 5. Formatear la salida
-        const datosFinales = Array.from(duracionDiaria).map(([dateString, minutos]) => ({
-            fecha: new Date(dateString).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }),
-            minutos: minutos
+        const datosFinales = Array.from(duracionDiaria.values()).map(({ label, ms }) => ({
+            fecha: label,
+            minutos: Math.round(ms / 60000)
         }));
 
         res.status(200).json({ success: true, datos: datosFinales });
