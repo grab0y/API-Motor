@@ -2,6 +2,26 @@
 
 const Evento = require('./modelEventos'); 
 const ID_DE_TU_BOMBA = "1"; // Usamos el mismo ID que en server.js
+const LOCAL_TIMEZONE = 'America/Argentina/Buenos_Aires';
+const LOCAL_TZ_ISO_OFFSET = '-03:00'; // Buenos Aires opera en UTC-3 sin DST
+
+// Reutilizamos formatters para evitar recrearlos en cada iteración.
+const localKeyFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LOCAL_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
+
+const localLabelFormatter = new Intl.DateTimeFormat('es-AR', {
+    timeZone: LOCAL_TIMEZONE,
+    day: '2-digit',
+    month: 'short'
+});
+
+const formatLocalDateKey = (date) => localKeyFormatter.format(date);
+const formatLocalDateLabel = (date) => localLabelFormatter.format(date);
+const formatLabelFromKey = (key) => formatLocalDateLabel(new Date(`${key}T00:00:00${LOCAL_TZ_ISO_OFFSET}`));
 
 // Función auxiliar para obtener el inicio del día hace N días (en hora local de la BD/servidor)
 const getStartOfDayXDaysAgo = (days) => {
@@ -70,12 +90,14 @@ exports.obtenerConteoDiario = async (req, res) => {
                 }
             },
             {
-                // 2. Agrupar por fecha (formateando la fecha para agrupar solo por día, mes y año)
+                // 2. Agrupar aplicando la zona horaria local para evitar desfases
                 $group: {
                     _id: {
-                        day: { $dayOfMonth: "$timestamp" },
-                        month: { $month: "$timestamp" },
-                        year: { $year: "$timestamp" }
+                        $dateToString: {
+                            format: "%Y-%m-%d",
+                            date: "$timestamp",
+                            timezone: LOCAL_TIMEZONE
+                        }
                     },
                     conteo: { $sum: 1 } // Contar los eventos
                 }
@@ -84,40 +106,43 @@ exports.obtenerConteoDiario = async (req, res) => {
                 // 3. Proyectar el resultado para un formato más limpio
                 $project: {
                     _id: 0,
-                    fecha: {
-                        $dateFromParts: { 
-                            year: "$_id.year", 
-                            month: "$_id.month", 
-                            day: "$_id.day" 
-                        }
-                    },
+                    fechaClave: "$_id",
                     conteo: 1
                 }
             },
             {
-                // 4. Ordenar por fecha
-                $sort: { fecha: 1 }
+                // 4. Ordenar por la fecha local calculada
+                $sort: { fechaClave: 1 }
             }
         ]);
 
         // Generamos un mapa para rellenar los 7 días con 0 si no hay datos.
         const conteoCompleto = new Map();
+        const hoy = new Date();
         for (let i = 0; i < 7; i++) {
-            const d = getStartOfDayXDaysAgo(6 - i); // Empezamos desde hace 6 días hasta hoy
-            const key = d.toDateString(); 
-            conteoCompleto.set(key, 0);
+            const baseDate = new Date(hoy);
+            baseDate.setDate(baseDate.getDate() - (6 - i)); // Empezamos desde hace 6 días hasta hoy
+            const key = formatLocalDateKey(baseDate);
+            conteoCompleto.set(key, { conteo: 0, label: formatLocalDateLabel(baseDate) });
         }
 
         // Rellenar con los resultados reales de la BD
         resultados.forEach(item => {
-            const key = new Date(item.fecha).toDateString();
-            conteoCompleto.set(key, item.conteo);
+            const existente = conteoCompleto.get(item.fechaClave);
+            if (existente) {
+                existente.conteo = item.conteo;
+            } else {
+                conteoCompleto.set(item.fechaClave, {
+                    conteo: item.conteo,
+                    label: formatLabelFromKey(item.fechaClave)
+                });
+            }
         });
 
         // Convertir a formato de array [ { fecha: '...', conteo: X }, ... ]
-        const datosFinales = Array.from(conteoCompleto).map(([dateString, conteo]) => ({
-            fecha: new Date(dateString).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }),
-            conteo: conteo
+        const datosFinales = Array.from(conteoCompleto.values()).map(({ label, conteo }) => ({
+            fecha: label,
+            conteo
         }));
         
         res.status(200).json({ success: true, datos: datosFinales });
