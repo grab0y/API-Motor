@@ -228,7 +228,7 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
 // ==============================
 
 const iniciarAnalisis = (bombaId = 'Bomba_Reservorio_01') => {
-    cron.schedule('*/1 * * * *', async () => {
+    cron.schedule('*/4 * * * *', async () => {
         console.log(`\n--- Analisis programado para ${bombaId} (${new Date().toLocaleTimeString('es-AR')}) ---`);
 
         try {
