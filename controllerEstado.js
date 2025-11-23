@@ -23,6 +23,17 @@ const localLabelFormatter = new Intl.DateTimeFormat('es-AR', {
 const formatLocalDateKey = (date) => localKeyFormatter.format(date);
 const formatLocalDateLabel = (date) => localLabelFormatter.format(date);
 const formatLabelFromKey = (key) => formatLocalDateLabel(new Date(`${key}T00:00:00${LOCAL_TZ_ISO_OFFSET}`));
+const formatLocalDateTime = (date) => date
+    ? new Date(date).toLocaleString('es-AR', {
+        timeZone: LOCAL_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    })
+    : null;
 
 const getLocalDayStart = (date) => new Date(`${formatLocalDateKey(date)}T00:00:00${LOCAL_TZ_ISO_OFFSET}`);
 const getLocalDayEnd = (date) => new Date(getLocalDayStart(date).getTime() + 24 * 60 * 60 * 1000);
@@ -255,8 +266,16 @@ exports.obtenerAlertasRecientes = async (req, res) => {
             .sort({ createdAt: -1 })
             .limit(limite)
             .select('-__v');
+        const alertasFormateadas = alertas.map((alerta) => {
+            const plain = alerta.toObject();
+            return {
+                ...plain,
+                createdAtLocal: formatLocalDateTime(plain.createdAt),
+                resueltaEnLocal: formatLocalDateTime(plain.resueltaEn)
+            };
+        });
 
-        res.status(200).json({ success: true, alertas });
+        res.status(200).json({ success: true, alertas: alertasFormateadas });
     } catch (error) {
         console.error('Error al obtener alertas recientes:', error);
         res.status(500).json({ success: false, message: 'Error interno al consultar las alertas.' });
