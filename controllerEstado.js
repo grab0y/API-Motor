@@ -1,6 +1,7 @@
 // controllers/estadoController.js
 
 const Evento = require('./modelEventos'); 
+const Alerta = require('./modelAlertas');
 const ID_DE_TU_BOMBA = "1"; // Usamos el mismo ID que en server.js
 const LOCAL_TIMEZONE = 'America/Argentina/Buenos_Aires';
 const LOCAL_TZ_ISO_OFFSET = '-03:00'; // Buenos Aires opera en UTC-3 sin DST
@@ -234,6 +235,34 @@ exports.obtenerTiempoEncendidoDiario = async (req, res) => {
     }
 };
 
+
+
+/**
+ * Devuelve las ultimas fallas registradas en la coleccion de alertas.
+ * Permite filtrar por alertas activas/inactivas y limitar el resultado.
+ */
+exports.obtenerAlertasRecientes = async (req, res) => {
+    const limiteSolicitado = parseInt(req.query.limite, 10) || 10;
+    const limite = Math.max(1, Math.min(limiteSolicitado, 50));
+    const filtro = { bombaId: ID_DE_TU_BOMBA };
+
+    if (typeof req.query.activo !== 'undefined') {
+        filtro.activo = req.query.activo === 'true';
+    }
+
+    try {
+        const alertas = await Alerta.find(filtro)
+            .sort({ createdAt: -1 })
+            .limit(limite)
+            .select('-__v');
+
+        res.status(200).json({ success: true, alertas });
+    } catch (error) {
+        console.error('Error al obtener alertas recientes:', error);
+        res.status(500).json({ success: false, message: 'Error interno al consultar las alertas.' });
+    }
+};
+
 // Rutas para forzar el análisis de alertas (llamadas desde el frontend/postman)
 exports.forzarAnalisis = async (req, res) => {
     // Asumimos que ID_DE_TU_BOMBA está disponible en este scope.
@@ -246,3 +275,5 @@ exports.forzarAnalisis = async (req, res) => {
         res.status(500).json(resultado);
     }
 };
+
+

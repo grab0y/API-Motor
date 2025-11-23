@@ -16,4 +16,8 @@ router.get('/conteo-diario', estadoController.obtenerConteoDiario);
 // 💡 NUEVO: Ruta GET para obtener los minutos encendidos por día
 router.get('/tiempo-encendido-diario', estadoController.obtenerTiempoEncendidoDiario);
 
+
+// Endpoint para obtener las ultimas alertas registradas
+router.get('/alertas', estadoController.obtenerAlertasRecientes);
+
 module.exports = router;

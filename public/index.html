@@ -94,6 +94,31 @@
                     </div>
                 </div>
             </div>
+
+            <div class="bg-white shadow-xl rounded-xl p-6 mt-8">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                    <div>
+                        <h3 class="text-2xl font-semibold text-gray-700">Ultimas alertas</h3>
+                        <p class="text-sm text-gray-500">Fallas registradas recientemente en el sistema.</p>
+                    </div>
+                    <span class="text-xs text-gray-400">Actualiza cada 15 segundos</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha / Hora</th>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripcion</th>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="4" class="px-6 py-4 text-sm text-gray-500 text-center">Cargando alertas...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -102,6 +127,7 @@
         // 🚨 CRÍTICO: Usar ruta relativa para Railway (HTTPS) en producción o localhost en desarrollo
         const API_BASE_URL = 'https://api-motor-production-0cb2.up.railway.app/api/lectura'; 
         const AUTH_URL = 'https://api-motor-production-0cb2.up.railway.app/api/auth/login';
+        const ALERTS_LIMIT = 6;
 
         // ELEMENTOS DOM
         const loginView = document.getElementById('login-view');
@@ -114,6 +140,7 @@
         const statusMessage = document.getElementById('status-message');
         const lastChange = document.getElementById('last-change');
         const historyBody = document.getElementById('history-body');
+        const alertsBody = document.getElementById('alerts-body');
         
         const ctxCount = document.getElementById('dailyCountChart').getContext('2d');
         const ctxTime = document.getElementById('dailyTimeChart').getContext('2d');
@@ -359,6 +386,42 @@
             }
         };
 
+        const fetchAlertas = async () => {
+            if (!alertsBody) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/alertas?limite=${ALERTS_LIMIT}`, { headers: getAuthHeaders() });
+                if (handleApiError(response.status)) return;
+                if (!response.ok) throw new Error('API alerts call failed');
+                const { alertas } = await response.json();
+
+                alertsBody.innerHTML = '';
+
+                if (!alertas || alertas.length === 0) {
+                    alertsBody.innerHTML = '<tr><td colspan="4" class="px-6 py-4 text-sm text-gray-500 text-center">No hay alertas registradas.</td></tr>';
+                    return;
+                }
+
+                alertas.forEach(alerta => {
+                    const row = document.createElement('tr');
+                    const estadoBadge = alerta.activo
+                        ? '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Activa</span>'
+                        : '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Resuelta</span>';
+
+                    row.innerHTML = `
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatTime(alerta.createdAt)}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm font-semibold text-gray-700">${alerta.tipo}</td>
+                        <td class="px-4 py-2 text-sm text-gray-600">${alerta.descripcion || '-'}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm">${estadoBadge}</td>
+                    `;
+                    alertsBody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error("Error al obtener alertas recientes:", error);
+            }
+        };
+
         // ======================================
         // INICIALIZACIÓN
         // ======================================
@@ -369,12 +432,14 @@
             fetchHistory();
             fetchCountData();
             fetchTimeData();
+            fetchAlertas();
             
             // Programar actualizaciones
             updateIntervals.push(setInterval(fetchStatus, 10000));
             updateIntervals.push(setInterval(fetchHistory, 10000));
             updateIntervals.push(setInterval(fetchCountData, 60000)); 
             updateIntervals.push(setInterval(fetchTimeData, 60000));
+            updateIntervals.push(setInterval(fetchAlertas, 15000));
         };
 
         const checkAuthAndRender = () => {
