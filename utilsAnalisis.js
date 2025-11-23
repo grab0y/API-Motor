@@ -2,16 +2,19 @@
 
 const cron = require('node-cron');
 const https = require('https');
-const Evento = require('./modelEventos');
-const Alerta = require('./modelAlertas');
+const Evento = require('./modelEventos'); // Asumo que son modelos de Mongoose
+const Alerta = require('./modelAlertas'); // Asumo que son modelos de Mongoose
 const nodemailer = require('nodemailer'); // Placeholder para integraciones de email
 
 // ==============================
 // CONFIGURACION DE ALERTAS Y SILENCIAMIENTO
 // ==============================
 const ALERTA_REPETICION_VECES = 3;
-const ALERTA_REPETICION_PERIODO_MIN = 120;
+const ALERTA_REPETICION_PERIODO_MIN = 120; // 2 horas
 const ALERTA_FUNCIONAMIENTO_MAX_MIN = 15;
+
+// NUEVA CONFIGURACION: Tiempo para volver a notificar si la falla persiste.
+const ALERTA_RENOTIFICACION_HORAS = 2; 
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
@@ -22,8 +25,13 @@ const TIPOS_ALERTA = Object.freeze({
     PROLONGADO: 'PROLONGADO'
 });
 
+// Variables de estado para la lógica de resolución (cerrar alerta en DB)
 let alertaActivaRepeticion = false;
 let alertaActivaProlongado = false;
+
+// Variables de estado para el temporizador de re-notificación
+let lastNotificationTimestampRepeticion = null;
+let lastNotificationTimestampProlongado = null;
 
 // ==============================
 // UTILIDADES DE NOTIFICACION Y LOG
@@ -127,10 +135,20 @@ const analizarArranquesRepetitivos = async (bombaId) => {
         timestamp: { $gte: limiteTiempo }
     }).sort({ timestamp: -1 });
 
+    const RE_NOTIFY_MS = ALERTA_RENOTIFICACION_HORAS * 60 * 60 * 1000;
+    const isReNotificationDue = lastNotificationTimestampRepeticion
+        ? (Date.now() - lastNotificationTimestampRepeticion) >= RE_NOTIFY_MS
+        : true; // Es la primera vez
+
     if (arranques.length >= ALERTA_REPETICION_VECES) {
-        if (!alertaActivaRepeticion) {
-            const asunto = `ALERTA: - ${arranques.length} arranques en ${ALERTA_REPETICION_PERIODO_MIN} min`;
+        
+        // Se notifica si: 1) Es una nueva falla (alertaActiva=false) O 2) Es una falla persistente y el tiempo de re-notificación expiró.
+        if (!alertaActivaRepeticion || isReNotificationDue) {
+
+            const notifPrefix = alertaActivaRepeticion ? '[RE-AVISO] ' : '';
+            const asunto = `${notifPrefix}ALERTA: - ${arranques.length} arranques en ${ALERTA_REPETICION_PERIODO_MIN} min`;
             const cuerpo = `La bomba ${bombaId} arranco ${arranques.length} veces en ${ALERTA_REPETICION_PERIODO_MIN} minutos. Posible fuga o flotante defectuoso.`;
+
             await procesarDisparoDeFalla({
                 bombaId,
                 tipo: TIPOS_ALERTA.REPETICION,
@@ -141,12 +159,17 @@ const analizarArranquesRepetitivos = async (bombaId) => {
                     periodoMinutos: ALERTA_REPETICION_PERIODO_MIN
                 }
             });
+
+            // Actualizamos los estados
             alertaActivaRepeticion = true;
-            console.log('[Analisis Repeticion] FALLA DETECTADA.');
+            lastNotificationTimestampRepeticion = Date.now(); // Guardamos el timestamp del nuevo aviso
+            console.log('[Analisis Repeticion] FALLA DETECTADA/RE-NOTIFICADA.');
+
         } else {
-            console.log('[Analisis Repeticion] FALLA ACTIVA. Silenciamiento.');
+            console.log('[Analisis Repeticion] FALLA ACTIVA. Silenciamiento temporal.');
         }
     } else {
+        // Condición de resolución
         if (alertaActivaRepeticion) {
             console.log('[Analisis Repeticion] RESOLUCION. Ciclos normales.');
             await cerrarAlertasActivas({
@@ -154,7 +177,10 @@ const analizarArranquesRepetitivos = async (bombaId) => {
                 tipo: TIPOS_ALERTA.REPETICION,
                 mensajeResolucion: 'La bomba volvio a operar dentro de los arranques esperados.'
             });
+
+            // Reseteamos los estados al resolverse
             alertaActivaRepeticion = false;
+            lastNotificationTimestampRepeticion = null;
         } else {
             console.log('[Analisis Repeticion] OK. Ciclos normales.');
         }
@@ -171,7 +197,9 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
     if (!ultimoStart) {
         if (alertaActivaProlongado) {
             console.log('[Analisis Prolongado] RESOLUCION. Sin eventos START recientes.');
+            // Reseteamos los estados
             alertaActivaProlongado = false;
+            lastNotificationTimestampProlongado = null;
         }
         return;
     }
@@ -187,9 +215,20 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
         const tiempoEncendidoMin = Math.floor(tiempoEncendidoMS / 60000);
 
         if (tiempoEncendidoMin >= ALERTA_FUNCIONAMIENTO_MAX_MIN) {
-            if (!alertaActivaProlongado) {
-                const asunto = `ALERTA: Bomba encendida ${tiempoEncendidoMin} min`;
+            // Condición de falla: Encendida por tiempo prolongado
+            
+            const RE_NOTIFY_MS = ALERTA_RENOTIFICACION_HORAS * 60 * 60 * 1000;
+            const isReNotificationDue = lastNotificationTimestampProlongado
+                ? (Date.now() - lastNotificationTimestampProlongado) >= RE_NOTIFY_MS
+                : true; // Es la primera vez
+
+            // Se notifica si: 1) Es una nueva falla O 2) Es una falla persistente y el tiempo de re-notificación expiró.
+            if (!alertaActivaProlongado || isReNotificationDue) {
+
+                const notifPrefix = alertaActivaProlongado ? '[RE-AVISO] ' : '';
+                const asunto = `${notifPrefix}ALERTA: Bomba encendida ${tiempoEncendidoMin} min`;
                 const cuerpo = `La bomba ${bombaId} supero el limite de ${ALERTA_FUNCIONAMIENTO_MAX_MIN} minutos encendida. Posible obstruccion o fallo de flotante.`;
+
                 await procesarDisparoDeFalla({
                     bombaId,
                     tipo: TIPOS_ALERTA.PROLONGADO,
@@ -201,15 +240,20 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
                         inicio: ultimoStart.timestamp
                     }
                 });
+
+                // Actualizamos los estados
                 alertaActivaProlongado = true;
-                console.log('[Analisis Prolongado] FALLA DETECTADA.');
+                lastNotificationTimestampProlongado = Date.now(); // Guardamos el timestamp del nuevo aviso
+                console.log('[Analisis Prolongado] FALLA DETECTADA/RE-NOTIFICADA.');
+
             } else {
-                console.log(`[Analisis Prolongado] FALLA ACTIVA (${tiempoEncendidoMin} min). Silenciamiento.`);
+                console.log(`[Analisis Prolongado] FALLA ACTIVA (${tiempoEncendidoMin} min). Silenciamiento temporal.`);
             }
         } else {
             console.log(`[Analisis Prolongado] OK. Encendida por ${tiempoEncendidoMin} minutos.`);
         }
     } else {
+        // Condición de resolución
         if (alertaActivaProlongado) {
             console.log('[Analisis Prolongado] RESOLUCION. La bomba se apago tras la alerta.');
             await cerrarAlertasActivas({
@@ -217,7 +261,10 @@ const analizarFuncionamientoProlongado = async (bombaId) => {
                 tipo: TIPOS_ALERTA.PROLONGADO,
                 mensajeResolucion: 'La bomba se apago luego del periodo prolongado.'
             });
+            
+            // Reseteamos los estados al resolverse
             alertaActivaProlongado = false;
+            lastNotificationTimestampProlongado = null;
         }
         console.log('[Analisis Prolongado] OK. Ciclo normal completado.');
     }
