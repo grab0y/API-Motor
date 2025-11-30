@@ -177,10 +177,12 @@ exports.obtenerConteoDiario = async (req, res) => {
         });
 
         // Convertir a formato de array [ { fecha: '...', conteo: X }, ... ]
-        const datosFinales = Array.from(conteoCompleto.values()).map(({ label, conteo }) => ({
-            fecha: label,
-            conteo
-        }));
+        const datosFinales = Array.from(conteoCompleto.entries())
+            .sort(([fechaA], [fechaB]) => fechaA.localeCompare(fechaB))
+            .map(([, { label, conteo }]) => ({
+                fecha: label,
+                conteo
+            }));
         
         res.status(200).json({ success: true, datos: datosFinales });
 
@@ -233,10 +235,12 @@ exports.obtenerTiempoEncendidoDiario = async (req, res) => {
         }
 
         // 5. Formatear la salida
-        const datosFinales = Array.from(duracionDiaria.values()).map(({ label, ms }) => ({
-            fecha: label,
-            minutos: Math.round(ms / 60000)
-        }));
+        const datosFinales = Array.from(duracionDiaria.entries())
+            .sort(([fechaA], [fechaB]) => fechaA.localeCompare(fechaB))
+            .map(([, { label, ms }]) => ({
+                fecha: label,
+                minutos: Math.round(ms / 60000)
+            }));
 
         res.status(200).json({ success: true, datos: datosFinales });
 
