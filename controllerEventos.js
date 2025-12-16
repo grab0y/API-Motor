@@ -56,7 +56,7 @@ exports.recordHeartbeat = async (req, res) => {
         console.log('[RECIBIDO] Heartbeat recibido:', req.body);
 
         // Validación básica
-        if (typeof rssi !== 'number' || uptime > 0) {
+        if (typeof rssi !== 'number' || rssi > 0) {
             return res.status(400).json({ 
                 message: 'RSSI es requerido y debe ser un número negativo.' 
             });
