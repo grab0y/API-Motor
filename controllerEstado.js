@@ -68,23 +68,42 @@ const sumarDuracionPorDia = (inicio, fin, acumulador) => {
     }
 };
 
-// Lógica para obtener el último evento y determinar el estado.
+// Lógica para obtener el último evento, estado y AHORA el último RSSI.
 exports.obtenerEstadoActual = async (req, res) => {
     try {
-        // Buscar el último evento registrado para esta bomba, ordenado por timestamp descendente
+        // [1] Buscar el último evento (para estado ON/OFF)
         const ultimoEvento = await Evento.findOne({ id_bomba: ID_DE_TU_BOMBA })
-                                          .sort({ timestamp: -1 }); // El más reciente
+                                          .sort({ timestamp: -1 });
+
+        // [2] Buscar el último Heartbeat (para RSSI)
+        const ultimoHeartbeat = await Heartbeat.findOne({ id_bomba: ID_DE_TU_BOMBA })
+                                              .sort({ receivedAt: -1 })
+                                              .select('rssi receivedAt'); // Solo necesitamos RSSI y el tiempo
 
         let estadoActual = {
             encendida: false,
             ultimoCambio: null,
-            mensaje: 'Bomba sin eventos registrados.'
+            mensaje: 'Bomba sin eventos registrados.',
+            // --- NUEVOS CAMPOS ---
+            rssi: null, 
+            ultimaConexion: null
+            // ---------------------
         };
 
         if (ultimoEvento) {
             estadoActual.encendida = (ultimoEvento.estado === 'START');
-            estadoActual.ultimoCambio = ultimoEvento.timestamp;
+            estadoActual.ultimoCambio = formatLocalDateTime(ultimoEvento.timestamp);
             estadoActual.mensaje = estadoActual.encendida ? 'FUNCIONANDO' : 'APAGADA';
+        }
+
+        if (ultimoHeartbeat && ultimoHeartbeat.rssi !== undefined) {
+            estadoActual.rssi = ultimoHeartbeat.rssi;
+            estadoActual.ultimaConexion = formatLocalDateTime(ultimoHeartbeat.receivedAt);
+        }
+        
+        // Si no hay eventos, pero sí hay heartbeat, ajustamos el mensaje
+        if (!ultimoEvento && ultimoHeartbeat) {
+             estadoActual.mensaje = 'Bomba en línea, esperando primer evento.';
         }
 
         res.status(200).json(estadoActual);
@@ -285,18 +304,4 @@ exports.obtenerAlertasRecientes = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno al consultar las alertas.' });
     }
 };
-
-// Rutas para forzar el análisis de alertas (llamadas desde el frontend/postman)
-exports.forzarAnalisis = async (req, res) => {
-    // Asumimos que ID_DE_TU_BOMBA está disponible en este scope.
-    const { analizarAlertas } = require('../utilsAnalisis');
-    const resultado = await analizarAlertas(ID_DE_TU_BOMBA);
-    
-    if (resultado.success) {
-        res.status(200).json(resultado);
-    } else {
-        res.status(500).json(resultado);
-    }
-};
-
 
