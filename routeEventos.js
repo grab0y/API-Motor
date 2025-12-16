@@ -7,5 +7,7 @@ const eventoController = require('./controllerEventos');
 // El Arduino hará un POST a esta ruta: /api/bomba/evento
 // Ejemplo de Body: { "id_bomba": "BombaPrincipal", "estado": "START" }
 router.post('/evento', eventoController.registrarEvento);
+router.post('/pol', eventoController.recordHeartbeat);
+
 
 module.exports = router;

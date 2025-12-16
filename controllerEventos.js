@@ -2,6 +2,7 @@
 
 // Asumiendo la ruta correcta:
 const Evento = require('./modelEventos'); 
+const Heartbeat = require('./modelHeartbeat');
 
 /**
  * Función para registrar un evento START o STOP enviado por el Arduino.
@@ -45,4 +46,39 @@ exports.registrarEvento = async (req, res) => {
     console.error('🚨 ERROR CRÍTICO al guardar evento:', error.message); 
     res.status(500).json({ success: false, message: 'Error interno al guardar evento' }); 
   }
+};
+
+// Función para registrar el pulso de vida
+exports.recordHeartbeat = async (req, res) => {
+    try {
+        const { uptime } = req.body;
+
+        // Validación básica
+        if (typeof uptime !== 'number' || uptime < 0) {
+            return res.status(400).json({ 
+                message: 'Uptime es requerido y debe ser un número positivo.' 
+            });
+        }
+
+        // Crear y guardar el nuevo documento Heartbeat
+        const newHeartbeat = new Heartbeat({
+            uptime: uptime
+            // Si incluyes deviceId, asegúrate de recibirlo en req.body
+            // deviceId: req.body.deviceId
+        });
+
+        await newHeartbeat.save();
+
+        // Respuesta al Arduino
+        res.status(200).json({ 
+            message: 'Heartbeat registrado con éxito', 
+            status: 'OK' 
+        });
+
+    } catch (error) {
+        console.error('Error al registrar Heartbeat:', error);
+        res.status(500).json({ 
+            message: 'Error interno del servidor al procesar el Heartbeat.' 
+        });
+    }
 };
