@@ -51,10 +51,10 @@ exports.registrarEvento = async (req, res) => {
 // Función para registrar el pulso de vida
 exports.recordHeartbeat = async (req, res) => {
     try {
-        const { uptime } = req.body;
+        const { uptime, id_bomba } = req.body;
 
         // Validación básica
-        if (typeof uptime !== 'number' || uptime < 0) {
+        if (typeof uptime !== 'number' || uptime > 0) {
             return res.status(400).json({ 
                 message: 'Uptime es requerido y debe ser un número positivo.' 
             });
@@ -62,7 +62,8 @@ exports.recordHeartbeat = async (req, res) => {
 
         // Crear y guardar el nuevo documento Heartbeat
         const newHeartbeat = new Heartbeat({
-            uptime: uptime
+            uptime: uptime,
+            id_bomba: id_bomba,
             // Si incluyes deviceId, asegúrate de recibirlo en req.body
             // deviceId: req.body.deviceId
         });
