@@ -79,7 +79,7 @@ exports.obtenerEstadoActual = async (req, res) => {
         // [2] Buscar el último Heartbeat (para RSSI)
         const ultimoHeartbeat = await Heartbeat.findOne({ id_bomba: ID_DE_TU_BOMBA })
                                               .sort({ receivedAt: -1 })
-                                              .select('rssi receivedAt'); // Solo necesitamos RSSI y el tiempo
+                                              .select('uptime receivedAt'); // Solo necesitamos RSSI y el tiempo
 
         let estadoActual = {
             encendida: false,
