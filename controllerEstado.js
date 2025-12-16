@@ -79,7 +79,8 @@ exports.obtenerEstadoActual = async (req, res) => {
         // [2] Buscar el último Heartbeat (para RSSI)
         const ultimoHeartbeat = await Heartbeat.findOne({ id_bomba: ID_DE_TU_BOMBA })
                                               .sort({ receivedAt: -1 })
-                                              .select('uptime receivedAt'); // Solo necesitamos RSSI y el tiempo
+                                              .select('uptime receivedAt'); 
+                                              // Notar que ahora se necesita 'receivedAt' sin formatear
 
         let estadoActual = {
             encendida: false,
@@ -87,7 +88,7 @@ exports.obtenerEstadoActual = async (req, res) => {
             mensaje: 'Bomba sin eventos registrados.',
             // --- NUEVOS CAMPOS ---
             rssi: null, 
-            ultimaConexion: null
+            ultimaConexion: null // <- AHORA ESTE SERÁ ISO STRING
             // ---------------------
         };
 
@@ -98,8 +99,10 @@ exports.obtenerEstadoActual = async (req, res) => {
         }
 
         if (ultimoHeartbeat && ultimoHeartbeat.uptime !== undefined) {
-            estadoActual.rssi = ultimoHeartbeat.uptime;
-            estadoActual.ultimaConexion = formatLocalDateTime(ultimoHeartbeat.receivedAt);
+            estadoActual.rssi = ultimoHeartbeat.uptime; // Asumiendo que uptime es el campo del RSSI
+            
+            // CAMBIO CRUCIAL: Enviamos el timestamp crudo (ISO) para que el frontend calcule la diferencia
+            estadoActual.ultimaConexion = ultimoHeartbeat.receivedAt; // Ya es un objeto Date válido (ISO)
         }
         
         // Si no hay eventos, pero sí hay heartbeat, ajustamos el mensaje

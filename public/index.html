@@ -57,16 +57,18 @@
                     </div>
                 </div>
 
-                <div class="mt-6 pt-4 border-t border-gray-100 flex flex-wrap gap-4 justify-start">
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                <div class="mt-6 pt-4 border-t border-gray-100 flex flex-wrap gap-6 justify-start">
+                    
+                    <div class="flex items-start"> 
+                        <svg class="w-5 h-5 text-blue-500 mr-2 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
                         <div>
-                            <p class="text-sm font-medium text-gray-600">Heartbeat:</p>
-                            <p id="heartbeat-age" class="text-md font-semibold text-gray-800">Cargando...</p>
+                            <p class="text-sm font-medium text-gray-600">Último Pulso (POL):</p>
+                            <p id="heartbeat-info" class="text-md font-semibold text-gray-800">Cargando...</p> 
                         </div>
                     </div>
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828a4 4 0 010-5.656m5.656 0a4 4 0 010 5.656M12 12h.01"></path></svg>
+                    
+                    <div class="flex items-start">
+                        <svg class="w-5 h-5 text-yellow-500 mr-2 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828a4 4 0 010-5.656m5.656 0a4 4 0 010 5.656M12 12h.01"></path></svg>
                         <div>
                             <p class="text-sm font-medium text-gray-600">Conexión (RSSI):</p>
                             <p id="rssi-status" class="text-md font-semibold">Cargando...</p>
@@ -162,7 +164,8 @@
         const statusMessage = document.getElementById('status-message');
         const lastChange = document.getElementById('last-change');
         // --- NUEVOS ELEMENTOS DOM ---
-        const heartbeatAge = document.getElementById('heartbeat-age');
+        // Se cambió de 'heartbeat-age' a 'heartbeat-info' en el HTML
+        const heartbeatInfo = document.getElementById('heartbeat-info'); 
         const rssiStatus = document.getElementById('rssi-status');
         // -----------------------------
         const historyBody = document.getElementById('history-body');
@@ -258,6 +261,7 @@
         const formatTime = (isoString) => {
             if (!isoString) return '-';
             const date = new Date(isoString);
+            // Formatear localmente para mostrar la hora de forma legible
             return date.toLocaleString('es-AR', {
                 year: 'numeric',
                 month: 'short',
@@ -268,30 +272,32 @@
             });
         };
         
-        // --- NUEVA FUNCIÓN DE UTILIDAD ---
+        // Función para calcular tiempo transcurrido (ya corregida para aceptar ISO)
         const timeSince = (isoString) => {
             if (!isoString) return 'Desconocido';
             const seconds = Math.floor((new Date() - new Date(isoString)) / 1000);
             
+            if (isNaN(seconds) || seconds < 0) return 'Error de fecha/hora';
+
             let interval = seconds / 31536000;
-            if (interval > 1) return Math.floor(interval) + " años";
+            if (interval >= 1) return Math.floor(interval) + (Math.floor(interval) > 1 ? " años" : " año");
             
             interval = seconds / 2592000;
-            if (interval > 1) return Math.floor(interval) + " meses";
+            if (interval >= 1) return Math.floor(interval) + (Math.floor(interval) > 1 ? " meses" : " mes");
             
             interval = seconds / 86400;
-            if (interval > 1) return Math.floor(interval) + " días";
+            if (interval >= 1) return Math.floor(interval) + (Math.floor(interval) > 1 ? " días" : " día");
             
             interval = seconds / 3600;
-            if (interval > 1) return Math.floor(interval) + " horas";
+            if (interval >= 1) return Math.floor(interval) + (Math.floor(interval) > 1 ? " horas" : " hora");
             
             interval = seconds / 60;
-            if (interval > 1) return Math.floor(interval) + " minutos";
+            if (interval >= 1) return Math.floor(interval) + (Math.floor(interval) > 1 ? " minutos" : " minuto");
             
             return Math.floor(seconds) + " segundos";
         };
 
-        // --- NUEVA FUNCIÓN DE UTILIDAD ---
+        // Función para determinar el estado del RSSI
         const getRssiStatus = (rssi) => {
             if (rssi === null || rssi === undefined) {
                 return { text: 'Sin datos', color: 'text-gray-500' };
@@ -367,9 +373,18 @@
 
                 // 2. Información del Heartbeat y RSSI
                 const rssiInfo = getRssiStatus(data.rssi);
-
-                heartbeatAge.textContent = timeSince(data.ultimaConexion);
                 
+                // Muestra la antigüedad Y la hora exacta (usando data.ultimaConexion, ahora un ISO string)
+                if (data.ultimaConexion) {
+                    const timeAgo = timeSince(data.ultimaConexion);
+                    const exactTime = formatTime(data.ultimaConexion);
+                    
+                    heartbeatInfo.innerHTML = `${timeAgo} 
+                        <span class="text-sm font-normal text-gray-500 block">(${exactTime})</span>`;
+                } else {
+                    heartbeatInfo.textContent = 'Sin datos';
+                }
+
                 // Aplicar el estado de color y texto del RSSI
                 rssiStatus.className = `text-md font-semibold ${rssiInfo.color}`;
                 rssiStatus.textContent = rssiInfo.text;
@@ -377,7 +392,7 @@
 
             } catch (error) {
                 console.error("Error al obtener el estado:", error);
-                heartbeatAge.textContent = 'Error';
+                heartbeatInfo.textContent = 'Error';
                 rssiStatus.textContent = 'Error';
             }
         };
