@@ -56,6 +56,23 @@
                         <p id="last-change" class="text-md font-medium text-gray-700">-</p>
                     </div>
                 </div>
+
+                <div class="mt-6 pt-4 border-t border-gray-100 flex flex-wrap gap-4 justify-start">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Heartbeat:</p>
+                            <p id="heartbeat-age" class="text-md font-semibold text-gray-800">Cargando...</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828a4 4 0 010-5.656m5.656 0a4 4 0 010 5.656M12 12h.01"></path></svg>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Conexión (RSSI):</p>
+                            <p id="rssi-status" class="text-md font-semibold">Cargando...</p>
+                        </div>
+                    </div>
+                </div>
                 <div class="mt-4 text-xs text-gray-400">
                     <p>Datos actualizados automáticamente cada 10 segundos.</p>
                 </div>
@@ -128,6 +145,11 @@
         const API_BASE_URL = 'https://api-motor-production-0cb2.up.railway.app/api/lectura'; 
         const AUTH_URL = 'https://api-motor-production-0cb2.up.railway.app/api/auth/login';
         const ALERTS_LIMIT = 6;
+        
+        // UMBRALES DE RSSI (Valores típicos, cuanto más cerca de 0 es mejor)
+        const RSSI_GOOD = -60; // Mayor o igual que -60 es buena conexión
+        const RSSI_OK = -80;    // Entre -60 y -80 es aceptable
+        // Menor que -80 es débil/pobre
 
         // ELEMENTOS DOM
         const loginView = document.getElementById('login-view');
@@ -139,6 +161,10 @@
         const statusLight = document.getElementById('status-light');
         const statusMessage = document.getElementById('status-message');
         const lastChange = document.getElementById('last-change');
+        // --- NUEVOS ELEMENTOS DOM ---
+        const heartbeatAge = document.getElementById('heartbeat-age');
+        const rssiStatus = document.getElementById('rssi-status');
+        // -----------------------------
         const historyBody = document.getElementById('history-body');
         const alertsBody = document.getElementById('alerts-body');
         
@@ -149,9 +175,9 @@
         let updateIntervals = [];
 
         // ======================================
-        // AUTENTICACIÓN Y VISTAS
+        // AUTENTICACIÓN Y VISTAS (sin cambios)
         // ======================================
-
+        
         const getAuthHeaders = () => {
             const token = localStorage.getItem('jwtToken');
             return token ? {
@@ -188,7 +214,7 @@
         };
 
         // ======================================
-        // LÓGICA DE LOGIN
+        // LÓGICA DE LOGIN (sin cambios)
         // ======================================
 
         const attemptLogin = async (e) => {
@@ -241,6 +267,44 @@
                 second: '2-digit'
             });
         };
+        
+        // --- NUEVA FUNCIÓN DE UTILIDAD ---
+        const timeSince = (isoString) => {
+            if (!isoString) return 'Desconocido';
+            const seconds = Math.floor((new Date() - new Date(isoString)) / 1000);
+            
+            let interval = seconds / 31536000;
+            if (interval > 1) return Math.floor(interval) + " años";
+            
+            interval = seconds / 2592000;
+            if (interval > 1) return Math.floor(interval) + " meses";
+            
+            interval = seconds / 86400;
+            if (interval > 1) return Math.floor(interval) + " días";
+            
+            interval = seconds / 3600;
+            if (interval > 1) return Math.floor(interval) + " horas";
+            
+            interval = seconds / 60;
+            if (interval > 1) return Math.floor(interval) + " minutos";
+            
+            return Math.floor(seconds) + " segundos";
+        };
+
+        // --- NUEVA FUNCIÓN DE UTILIDAD ---
+        const getRssiStatus = (rssi) => {
+            if (rssi === null || rssi === undefined) {
+                return { text: 'Sin datos', color: 'text-gray-500' };
+            }
+            if (rssi >= RSSI_GOOD) {
+                return { text: `${rssi} dBm (Excelente)`, color: 'text-green-600' };
+            }
+            if (rssi >= RSSI_OK) {
+                return { text: `${rssi} dBm (Aceptable)`, color: 'text-yellow-600' };
+            }
+            return { text: `${rssi} dBm (Débil)`, color: 'text-red-600' };
+        };
+        // ---------------------------------
 
         const createOrUpdateChart = (ctx, chartInstance, type, labels, data, label, color) => {
             if (chartInstance) {
@@ -291,8 +355,9 @@
                 if (!response.ok) throw new Error('API status call failed');
                 const data = await response.json();
 
+                // 1. Estado ON/OFF
                 statusMessage.textContent = data.mensaje;
-                lastChange.textContent = formatTime(data.ultimoCambio);
+                lastChange.textContent = data.ultimoCambio || '-'; // Ya viene formateado del backend
 
                 const isRunning = data.encendida;
                 statusLight.className = isRunning 
@@ -300,8 +365,20 @@
                     : 'w-12 h-12 rounded-full shadow-lg bg-red-500';
                 statusMessage.className = `text-4xl font-extrabold ${isRunning ? 'text-green-700' : 'text-red-700'}`;
 
+                // 2. Información del Heartbeat y RSSI
+                const rssiInfo = getRssiStatus(data.rssi);
+
+                heartbeatAge.textContent = timeSince(data.ultimaConexion);
+                
+                // Aplicar el estado de color y texto del RSSI
+                rssiStatus.className = `text-md font-semibold ${rssiInfo.color}`;
+                rssiStatus.textContent = rssiInfo.text;
+
+
             } catch (error) {
                 console.error("Error al obtener el estado:", error);
+                heartbeatAge.textContent = 'Error';
+                rssiStatus.textContent = 'Error';
             }
         };
 
@@ -409,7 +486,7 @@
                         : '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Resuelta</span>';
 
                     row.innerHTML = `
-                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatTime(alerta.createdAt)}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${alerta.createdAtLocal}</td>
                         <td class="px-4 py-2 whitespace-nowrap text-sm font-semibold text-gray-700">${alerta.tipo}</td>
                         <td class="px-4 py-2 text-sm text-gray-600">${alerta.descripcion || '-'}</td>
                         <td class="px-4 py-2 whitespace-nowrap text-sm">${estadoBadge}</td>

@@ -2,6 +2,7 @@
 
 const Evento = require('./modelEventos'); 
 const Alerta = require('./modelAlertas');
+const Heartbeat = require('./modelHeartbeat');
 const ID_DE_TU_BOMBA = "1"; // Usamos el mismo ID que en server.js
 const LOCAL_TIMEZONE = 'America/Argentina/Buenos_Aires';
 const LOCAL_TZ_ISO_OFFSET = '-03:00'; // Buenos Aires opera en UTC-3 sin DST
