@@ -52,6 +52,7 @@ exports.registrarEvento = async (req, res) => {
 exports.recordHeartbeat = async (req, res) => {
     try {
         const { uptime, id_bomba } = req.body;
+        console.log('[RECIBIDO] Heartbeat recibido:', req.body);
 
         // Validación básica
         if (typeof uptime !== 'number' || uptime > 0) {
