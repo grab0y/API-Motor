@@ -97,8 +97,8 @@ exports.obtenerEstadoActual = async (req, res) => {
             estadoActual.mensaje = estadoActual.encendida ? 'FUNCIONANDO' : 'APAGADA';
         }
 
-        if (ultimoHeartbeat && ultimoHeartbeat.rssi !== undefined) {
-            estadoActual.rssi = ultimoHeartbeat.rssi;
+        if (ultimoHeartbeat && ultimoHeartbeat.uptime !== undefined) {
+            estadoActual.rssi = ultimoHeartbeat.uptime;
             estadoActual.ultimaConexion = formatLocalDateTime(ultimoHeartbeat.receivedAt);
         }
         
